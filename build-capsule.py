@@ -22,6 +22,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 KB_HOST = "127.0.0.1"
 KB_PORT = 3333
@@ -63,7 +64,7 @@ def _detect_context() -> tuple[str, str]:
     return project, branch
 
 
-def _kb_search(query: str) -> dict | None:
+def _kb_search(query: str) -> Optional[dict]:
     conn = http.client.HTTPConnection(KB_HOST, KB_PORT, timeout=KB_TIMEOUT)
     try:
         conn.request("GET", f"/search?q={query}")

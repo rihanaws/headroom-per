@@ -136,6 +136,57 @@ Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual 
 - `resume-codex.sh` — Codex session-start wrapper
 - `CLAUDE.md` — added `## On Session Start` section with `build-capsule.py` invocation
 
+---
+
+## 2026-06-18 — Token efficiency fixes + Phase 4 verification audit
+
+### Token efficiency (A, B, C, D, Serena) — all applied
+
+**Before token count (from session log 3618a584, Jun 18 01:45 — before any of today's fixes):**
+- Total: **46,600 tokens**
+  - System prompt: 6,700 | System tools: 26,400 | MCP tools: 6,300 | Memory files: 1,700 | Skills: 3,600 | Messages: 2,000
+- MCP tools breakdown: context7 (1,193), headroom (394), ide (277), claude-mem search (3,388 across ~20 tools), plugin_context7 (1,202)
+- Memory files: `~/.claude/CLAUDE.md` (12), `RTK.md` (256), `rules/context7.md` (562), project `CLAUDE.md` (825)
+
+**A — claude-mem-context blocks in 12.1.5 cache**: Stripped from all 5 CLAUDE.md files in `~/.claude/plugins/cache/thedotmack/claude-mem/12.1.5/`. Note: 12.1.5 is not the active version (13.6.1 is active, which has no CLAUDE.md). Blocks were not being loaded in sessions; cleanup done for hygiene.
+
+**B — Plugins disabled**: `security-guidance@claude-plugins-official`, `code-simplifier@claude-plugins-official`, `pr-review-toolkit@claude-plugins-official` all set to `false` in `~/.claude/settings.json`.
+
+**C — KB MCP schemas minimized**: `ListToolsRequestSchema` handler in `knowledge-base/src/mcp-server.ts` rewritten to return stripped schemas (type + required only, no property-level descriptions). Saves ~600 tokens when the KB MCP server is loaded. CallTool handler unchanged — full validation logic preserved.
+
+**D — GitKraken hooks removed**: Removed GitKraken CLI hook entries from 9 event types (PostToolUse, PostToolUseFailure, UserPromptSubmit, Notification, Elicitation, ElicitationResult, PermissionRequest, PostCompact, StopFailure). Events that became empty after removal had their keys deleted. Remaining GitKraken hooks: PreToolUse, SessionEnd, SessionStart (those were not in the removal list).
+
+**Serena**: Removed 4-line activation output from `hook.mjs` SessionStart block. SessionStart now emits empty string. One-line comment left explaining why: canonical memory files are empty 1-liners, instruction produced zero benefit.
+
+**After token count**: NOT yet measured — requires a fresh `claude` session at this project directory. To measure: start `claude`, run `/context` at the first prompt, report the breakdown. Expected savings: ~200–800 tokens depending on whether KB MCP loads cleanly and how much the disabled plugins contributed.
+
+---
+
+### Phase 4 verification — Decision #12 and /clear re-injection
+
+**Decision #12 — VERIFIED CORRECT, no changes needed.**
+- session-state.md (from a prior session) claimed "decision log only goes to #11, the rule is actually Decision #10." This was wrong.
+- `docs/implementation-spec-phases-1-4.md` decision log runs from #9 through #14. Decision #12 at line 25 reads: "Fallback triggers on connection-refused only, not on timeout; a hung-but-listening KB returns no retrieval rather than falling back."
+- `build-capsule.py` references to Decision #12 are correct. No code changes made.
+
+**build-capsule.py Python 3.9 bug — FOUND AND FIXED.**
+- `dict | None` union syntax (line 66) requires Python 3.10+. Mac runs Python 3.9.6. Error: `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`.
+- Fix: added `from typing import Optional` and changed annotation to `Optional[dict]`.
+- Confirmed working after fix: script produces full capsule from live KB at port 3333.
+
+**Phase 4 acceptance criterion — /clear re-injection — NOT independently verified.**
+- Per CLAUDE.md communication rules: reporting what was actually found, not what was attempted.
+- Searched all session JSONL files in `~/.claude/projects/-Users-rihan-Downloads-rihan-personal-ai/`. No file contains the string `build-capsule`. The capsule mechanism has never been observed firing in production.
+- Session 3618a584 (Jun 18 01:45): `/clear` was run at event 10. Post-clear CLAUDE.md was re-read (system prompt re-initialized — mechanism is correct). But user ran `/reload-skills` immediately with no follow-up prompt — the model never had a chance to invoke the On Session Start instruction. Not usable as verification.
+- Session 075062d6 (Jun 17, prior session): `/clear` + subsequent prompts, but Phase 4's On Session Start block was not yet in CLAUDE.md at that time.
+- The Phase 4 "verified" entry above reflects a direct `python3 build-capsule.py` CLI run, not a /clear → prompt → capsule injection sequence.
+- Additionally, build-capsule.py had a Python 3.9 bug that would have caused it to fail even if the On Session Start instruction had been followed. The bug is now fixed.
+- **What is confirmed**: CLAUDE.md is re-read after `/clear` (system prompt re-initializes). **What is not confirmed**: the model actually runs `python3 build-capsule.py` in response to a user prompt after /clear.
+- **To close this**: start `claude` in this directory, run `/clear`, send any prompt, and verify the model invokes `python3 build-capsule.py`. Report the literal output. Do not infer from the mechanism looking correct.
+
+### Phase 5 gate
+**Do not start Phase 5 until the /clear re-injection is verified interactively.** Decision #12 is resolved (correct). The /clear criterion is the only remaining blocker.
+
 ### What's next
 - Phase 5: Local model (quantized 7B–8B) for summarization, log classification, and secret redaction.
 - Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
