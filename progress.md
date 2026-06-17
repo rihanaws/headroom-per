@@ -51,4 +51,36 @@
 - Decision #4 (no special handling for client context) does not apply here. No client data entered the fallback store.
 
 ### What's next
-- Phase 2: Extend the existing knowledge-base entity-observation model with prompt/response summaries, tool calls, and redaction logic.
+- Phase 3: Read-only Claude Mem ingestion, 15-minute poll, dedupe by hash, last-write-wins conflict resolution.
+
+## Phase 2 — COMPLETE (4 of 4 acceptance criteria met)
+
+### Verified results
+1. **✅ `POST /capture` with a `prompt_response` payload writes a redacted observation to KB.**
+   - `{"message":"Event captured"}` returned with HTTP 201.
+   - Observation stored at id=723, `observation_type=prompt_response`, `content_hash` populated.
+
+2. **✅ `observation_type` column exists and is populated on new writes.**
+   - SQLite confirmed: `observation_type='prompt_response'` on the new row.
+   - `content_hash` SHA-256 hex confirmed present.
+
+3. **✅ All 574 existing observations still readable via `/graph` with `observation_type='general'`.**
+   - `SELECT observation_type, COUNT(*) FROM observations GROUP BY observation_type` → `general: 574, prompt_response: 1` — no existing rows affected.
+
+4. **✅ A payload containing real API key patterns is stored with `[REDACTED]` — no raw secrets in DB.**
+   - Input: `sk-ant-abc123FAKEKEY`, `ANTHROPIC_API_KEY=sk-ant-deadbeef12345`, `Bearer eyJ...`, `MY_SECRET=super-secret-value-here`
+   - Stored content: all four replaced with `[REDACTED]`. `Contains raw secrets: false`.
+
+### Files changed
+- `knowledge-base/src/redact.ts` — NEW: redaction module (Bearer, sk-/pk- prefixes, env var secrets, SSH keys, DB passwords, GitHub PATs)
+- `knowledge-base/src/db.ts` — additive `ALTER TABLE` for `observation_type TEXT DEFAULT 'general'` and `content_hash TEXT` columns + two new indices
+- `knowledge-base/src/adapters/memory-adapter.ts` — added `addObservationTyped()` to interface and `SQLiteMemoryAdapter`
+- `knowledge-base/src/graph.ts` — added `CaptureEvent` interface, `ObservationType` type, `captureEvent()` function
+- `knowledge-base/src/rest-api.ts` — added `POST /capture` route
+- `knowledge-base/src/mcp-server.ts` — added `capture_event` MCP tool
+
+### Security note: Greptile token coverage confirmed
+The tracked Greptile credential is stored as `Authorization: Bearer <token>` in `.mcp.json`. The `Bearer\s+...` pattern in `redact.ts` covers this format. Any observation containing that token would be redacted before write.
+
+### What's next
+- Phase 3: Read-only Claude Mem ingestion, 15-minute poll, dedupe by `content_hash`, last-write-wins.
