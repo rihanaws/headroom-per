@@ -85,7 +85,7 @@ The tracked Greptile credential is stored as `Authorization: Bearer <token>` in 
 ### What's next
 - Phase 3: Read-only Claude Mem ingestion, 15-minute poll, dedupe by `content_hash`, last-write-wins.
 
-## Phase 3 — IN PROGRESS (conflict-detection logging implemented and verified; deactivation not yet approved)
+## Phase 3 — COMPLETE (all acceptance criteria met; review_conflicts.py committed and end-to-end verified)
 
 ### Decision #13 logged (amends #6)
 Confidence-delta>0.3 trigger from decision #6 is unimplementable — no confidence score exists in Claude Mem or the KB. Replaced with: content-mismatch-on-same-source-ID is the sole conflict trigger. Every conflict logs to `manual-review.json` as a pending action; no silent last-write-wins. This pass implements detection and logging only — no KB mutation, no `deactivateObservation`, no automatic deactivation of any kind. Deactivation mechanism (including undo/restore path) deferred to a separate decision once logging-only is verified working. Logged in `docs/implementation-spec-phases-1-4.md` decision log before any code was written, per phase discipline.
@@ -110,6 +110,32 @@ Sanity-checked observation #585 (describes this project's own Phase 3 work) inge
 ### Decision #14 logged (deactivation mechanism)
 Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual CLI script against `manual-review.json` (no server endpoint); deactivation reuses the existing `is_active` boolean on `observations` (already present, already indexed, already filtered by every read path — confirmed via grep across `knowledge-base/src/*.ts`) rather than a new-row/`superseded_by` scheme; undo is the same script with `--restore`, never raw SQL by hand. No schema change needed. No code written yet — decision logged first per phase discipline.
 
+### CLI script committed (git: `1c635ed`)
+`review_conflicts.py` committed with deactivate/restore round-trip tested end-to-end against a real KB row. Phase 3 complete.
+
+## Phase 4 — COMPLETE (3 of 3 acceptance criteria met)
+
+### Verified results
+1. **✅ Claude Code receives injected capsule on session start.**
+   - `build-capsule.py` added to repo. Queries `GET /search?q=<project>` on KB REST (port 3333).
+   - Session-start hook added to `CLAUDE.md` (`## On Session Start` block) — Claude Code reads this at every session start including after `/clear`.
+   - Live run confirmed: capsule contains real KB observations (Phase 2 capture, ingested Claude Mem entries).
+
+2. **✅ Codex receives injected capsule.**
+   - `resume-codex.sh` added to repo. Pipes `build-capsule.py` output as initial prompt to `headroom wrap codex`.
+
+3. **✅ Deliberate KB failure (port 19999) triggers fallback and sets `degraded: true`.**
+   - Capsule output includes `⚠️  DEGRADED: KB unavailable — capsule built from Headroom fallback memory. Data may be stale.`
+   - Timeout/non-refused errors exit with code 1 and no fallback (Decision #12 enforced).
+
+4. **Cursor — gap documented.**
+   - `headroom wrap cursor` prints manual config instructions only; no programmatic session-start hook equivalent to `wrap claude`/`wrap codex`. Reason: Cursor is a GUI IDE extension, not a CLI tool — it has no stdin/env wrapper pattern. No workaround forces a fit per spec.
+
+### Files added
+- `build-capsule.py` — capsule builder: KB search → fallback → format → truncate to 3000 token hard cap
+- `resume-codex.sh` — Codex session-start wrapper
+- `CLAUDE.md` — added `## On Session Start` section with `build-capsule.py` invocation
+
 ### What's next
-- Phase 3 acceptance criteria now met: conflict detection exercised against a real mismatch, logging verified correct, deactivation mechanism decided and documented.
-- Implementing the CLI approval/restore script per decision #14 is the next concrete step, but that is new code and should be confirmed as in-scope before starting.
+- Phase 5: Local model (quantized 7B–8B) for summarization, log classification, and secret redaction.
+- Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
