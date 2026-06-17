@@ -30,5 +30,16 @@
 ### Documentation corrections applied
 - SKILL.md: "62 projects seeded" → "Phase 0 audit found 2 entities and 0 observations"
 
+## Phase 1 — COMPLETE (2 of 2 acceptance criteria met)
+
+### Verified results
+1. **✅ Headroom memory store persists data across a hard process kill (`kill -9`).**
+   - Verified that a test memory entry written to `memory.db` survives a hard `kill -9` of the `headroom` process and is successfully read back using `test_persistence.py`.
+2. **✅ Deliberate knowledge-base health-check failure triggers fallback and tags capsule `degraded: true`.**
+   - Created [retrieve_with_fallback.py](file:///Users/rihan/Downloads/rihan-personal-ai/retrieve_with_fallback.py).
+   - Under healthy KB API: successfully returns results with `degraded: false`.
+   - Under offline KB (`ConnectionRefusedError`): successfully falls back to Headroom's persistent HNSW memory backend and sets `degraded: true`.
+   - Under hung KB / latency (socket timeout): correctly gates failover (rejects fallback), exits with code 1, and prints error message to stderr.
+
 ### What's next
-- Phase 1: Headroom transport, native memory enabled, registered as health-check-gated fallback
+- Phase 2: Extend the existing knowledge-base entity-observation model with prompt/response summaries, tool calls, and redaction logic.

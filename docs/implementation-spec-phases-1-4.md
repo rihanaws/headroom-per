@@ -1,3 +1,4 @@
+
 # Implementation Spec: Personal AI Memory Gateway — Phases 1–4 (Amended)
 
 **Status:** Accepted (post-interview)
@@ -21,6 +22,7 @@ Out: local model (Phase 5), fine-tuning export (Phase 6), off-machine backup bui
 | 9 | Same-machine redundancy now; off-machine backup deferred to a follow-on phase | Solves the service-crash disaster case immediately without blocking on backup design choices that deserve their own pass | True machine-loss protection is not yet in place — accepted as open until follow-on |
 | 10 | (amends #1) Headroom's native memory is turned on and used as a fallback retrieval source, gated strictly behind a knowledge-base health-check failure | Matches requested redundancy; gating on confirmed failure (not latency/partial errors) avoids flapping between sources | Headroom's memory and the knowledge base will drift over time by design — fallback sessions must be visibly tagged, not silent |
 | 11 | Phase 4 wiring targets Claude Code, Codex, and Cursor simultaneously | Requested scope | Cursor is an IDE extension and may lack an equivalent session-start hook; if so, ship the other two and treat Cursor separately rather than forcing a workaround |
+| 12 | Fallback triggers on connection-refused only, not on timeout; a hung-but-listening KB returns no retrieval rather than falling back | "Never on latency" means a deadlocked KB that still accepts TCP connections is treated as degraded-silent, not as failed — conservative, avoids flapping into the fallback on slow queries | A truly hung KB produces zero retrieval until manually restarted; accepted as the right trade-off vs. the drift risk of premature fallback |
 
 ## Step-by-step plan
 
