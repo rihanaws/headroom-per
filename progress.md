@@ -158,7 +158,11 @@ Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual 
 
 **Serena**: Removed 4-line activation output from `hook.mjs` SessionStart block. SessionStart now emits empty string. One-line comment left explaining why: canonical memory files are empty 1-liners, instruction produced zero benefit.
 
-**After token count**: NOT yet measured — requires a fresh `claude` session at this project directory. To measure: start `claude`, run `/context` at the first prompt, report the breakdown. Expected savings: ~200–800 tokens depending on whether KB MCP loads cleanly and how much the disabled plugins contributed.
+**After token count (measured 2026-06-18, Claude Code v2.1.179, Sonnet 4.6 low effort):**
+- Total: **47.6k tokens** — HIGHER than before by ~1k. Net effect of all fixes: zero measurable savings.
+- System prompt: 6.7k (+0) | System tools: 27.2k (+0.8k, version drift) | MCP tools: 6.4k (+0.1k) | Memory files: 1.8k (+0.1k, CLAUDE.md grew) | Skills: 3.6k (+0) | Messages: 1.9k (-0.1k)
+- Root cause of zero savings: Fix B (disabled plugins) were not loading tokens into this project's context. Fix C (KB schemas) confirmed inert — knowledge-base is not registered as an MCP server in this project at all (verified via `claude mcp list`). Fix A was always inert. Serena removal (~100 tokens) absorbed in variance.
+- System tools increase (+0.8k) is Claude Code version drift, not our changes.
 
 ---
 
@@ -182,7 +186,8 @@ Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual 
 - The Phase 4 "verified" entry above reflects a direct `python3 build-capsule.py` CLI run, not a /clear → prompt → capsule injection sequence.
 - Additionally, build-capsule.py had a Python 3.9 bug that would have caused it to fail even if the On Session Start instruction had been followed. The bug is now fixed.
 - **What is confirmed**: CLAUDE.md is re-read after `/clear` (system prompt re-initializes). **What is not confirmed**: the model actually runs `python3 build-capsule.py` in response to a user prompt after /clear.
-- **To close this**: start `claude` in this directory, run `/clear`, send any prompt, and verify the model invokes `python3 build-capsule.py`. Report the literal output. Do not infer from the mechanism looking correct.
+- **Partial test performed 2026-06-18**: User ran `/clear` then typed `python3 build-capsule.py` as the first prompt. Model executed the script and produced a valid capsule (Python 3.9 fix confirmed working). BUT: the model ran it because the user typed that command — not autonomously from the CLAUDE.md instruction. This does not verify the mechanism.
+- **To close this**: after `/clear`, type any unrelated first prompt (e.g. "what's the status", "hello"). If the model runs `python3 build-capsule.py` before answering, the mechanism is verified. If it doesn't, the On Session Start instruction is not being followed autonomously after /clear.
 
 ### Phase 5 gate
 **Do not start Phase 5 until the /clear re-injection is verified interactively.** Decision #12 is resolved (correct). The /clear criterion is the only remaining blocker.
