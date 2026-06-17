@@ -41,5 +41,14 @@
    - Under offline KB (`ConnectionRefusedError`): successfully falls back to Headroom's persistent HNSW memory backend and sets `degraded: true`.
    - Under hung KB / latency (socket timeout): correctly gates failover (rejects fallback), exits with code 1, and prints error message to stderr.
 
+### Infrastructure fix applied (unblocked persistence)
+- **Bug in `headroom/memory/adapters/hnsw.py`**: `HNSWVectorIndex.__init__` was correctly auto-saving to `.hnsw` and `.meta` files but never called `self.load_index()` on startup — so every cold start lost all prior data, making the index appear to persist while actually being empty after any restart. Patched `__init__` to call `load_index()` when the `.hnsw` file already exists. Without this fix, the `kill -9` persistence test would always fail regardless of HNSW write behavior.
+  - **File**: `/Users/rihan/all-coding-project/headroom/headroom/memory/adapters/hnsw.py`
+  - **Note for future sessions**: Do not assume Headroom's memory adapter works end-to-end before verifying with an actual write-then-read-after-restart. This machine hit that case and the fix was non-obvious.
+
+### Security check: autocsr test run
+- `retrieve_with_fallback.py` is **read-only** — it calls `search_memories()` and `check_kb_health()` only, with no write path to Headroom's memory store. The test run with `--project autocsr` queried what was already in the HNSW index (`"Phase 1 hard kill persistence test: this must survive."`) and the KB's `/graph` endpoint. No client observation was written into Headroom's fallback store.
+- Decision #4 (no special handling for client context) does not apply here. No client data entered the fallback store.
+
 ### What's next
 - Phase 2: Extend the existing knowledge-base entity-observation model with prompt/response summaries, tool calls, and redaction logic.
