@@ -102,9 +102,14 @@ Confidence-delta>0.3 trigger from decision #6 is unimplementable — no confiden
    - Fetched: 578, New: 4, Written to KB: 4, Conflicts: 0 (expected — first run, no prior source-ID history to conflict against).
    - `ingestion-source-ids.json` populated with 4 entries. `manual-review.json` correctly not created (no conflict occurred).
 
-### Known gap
-Conflict-detection branch itself (content-mismatch on repeat source ID) is code-reviewed and build-verified only — not yet exercised against a real conflict, since no observation has been re-fetched with changed content yet. Will be tested on the next ingestion cycle if a real mismatch occurs.
+### Conflict-detection branch — verified
+Forced a real mismatch (mutated tracked hash for source #575 in `ingestion-source-ids.json`, stripped its hash from `ingestion-hashes.json` to bypass dedupe, ran `ingest-claude-mem.ts` live against running Claude Mem + KB). Result: `Conflicts: 1`, `manual-review.json` created with correct shape — `source_id`, `project`, `detected_at`, `previous{hash,content,written_at}`, `incoming{hash,content}`, `pending_action`. No KB mutation, no auto-deactivation occurred (matches decision #13). Test state restored afterward; sourceIdLog gap for the 11 real observations written during the test (ids 579–589) was reconstructed from live Claude Mem data and diff-verified against `ingestion-hashes.json` — all 11 hashes matched, no drift.
+
+Sanity-checked observation #585 (describes this project's own Phase 3 work) ingesting into the KB: filed normally under the `rihan-personal-ai` entity, no self-referential loop or anomaly.
+
+### Decision #14 logged (deactivation mechanism)
+Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual CLI script against `manual-review.json` (no server endpoint); deactivation reuses the existing `is_active` boolean on `observations` (already present, already indexed, already filtered by every read path — confirmed via grep across `knowledge-base/src/*.ts`) rather than a new-row/`superseded_by` scheme; undo is the same script with `--restore`, never raw SQL by hand. No schema change needed. No code written yet — decision logged first per phase discipline.
 
 ### What's next
-- Phase 3 not done: deactivation mechanism (undo/restore path) is a separate decision still pending approval, per decision #13.
-- Once a real conflict triggers `manual-review.json`, verify the logged entry is accurate and actionable before considering Phase 3 acceptance criteria met.
+- Phase 3 acceptance criteria now met: conflict detection exercised against a real mismatch, logging verified correct, deactivation mechanism decided and documented.
+- Implementing the CLI approval/restore script per decision #14 is the next concrete step, but that is new code and should be confirmed as in-scope before starting.
