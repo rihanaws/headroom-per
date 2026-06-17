@@ -84,3 +84,27 @@ The tracked Greptile credential is stored as `Authorization: Bearer <token>` in 
 
 ### What's next
 - Phase 3: Read-only Claude Mem ingestion, 15-minute poll, dedupe by `content_hash`, last-write-wins.
+
+## Phase 3 — IN PROGRESS (conflict-detection logging implemented and verified; deactivation not yet approved)
+
+### Decision #13 logged (amends #6)
+Confidence-delta>0.3 trigger from decision #6 is unimplementable — no confidence score exists in Claude Mem or the KB. Replaced with: content-mismatch-on-same-source-ID is the sole conflict trigger. Every conflict logs to `manual-review.json` as a pending action; no silent last-write-wins. This pass implements detection and logging only — no KB mutation, no `deactivateObservation`, no automatic deactivation of any kind. Deactivation mechanism (including undo/restore path) deferred to a separate decision once logging-only is verified working. Logged in `docs/implementation-spec-phases-1-4.md` decision log before any code was written, per phase discipline.
+
+### Verified results
+1. **✅ `ingest-claude-mem.ts` rewritten to match decision #13.**
+   - Docstring corrected — no longer falsely claims last-write-wins/confidence-delta logic that didn't exist in the original uploaded file.
+   - Added `ingestion-source-ids.json`: tracks last hash/content/written_at per Claude Mem source observation ID.
+   - Added `appendManualReview()`: logs conflicts to `manual-review.json` with previous/incoming content, never auto-resolves.
+   - `bun build` compiles clean. Grepped for `deactivate|DELETE|is_active` — zero live calls, only comment/string references.
+
+2. **✅ Live run against real Claude Mem + KB.**
+   - Both health checks passed (`127.0.0.1:37701`, `127.0.0.1:3333`).
+   - Fetched: 578, New: 4, Written to KB: 4, Conflicts: 0 (expected — first run, no prior source-ID history to conflict against).
+   - `ingestion-source-ids.json` populated with 4 entries. `manual-review.json` correctly not created (no conflict occurred).
+
+### Known gap
+Conflict-detection branch itself (content-mismatch on repeat source ID) is code-reviewed and build-verified only — not yet exercised against a real conflict, since no observation has been re-fetched with changed content yet. Will be tested on the next ingestion cycle if a real mismatch occurs.
+
+### What's next
+- Phase 3 not done: deactivation mechanism (undo/restore path) is a separate decision still pending approval, per decision #13.
+- Once a real conflict triggers `manual-review.json`, verify the logged entry is accurate and actionable before considering Phase 3 acceptance criteria met.
