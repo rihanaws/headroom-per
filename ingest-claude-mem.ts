@@ -23,6 +23,7 @@ const OMLX_BASE = "http://127.0.0.1:8005";
 const OMLX_MODEL = "Qwen3.5-4B-MLX-4bit";
 const SUMMARIZE_THRESHOLD_CHARS = 1500;
 const BATCH_SIZE = 50;
+const REDACTION_FLAGS_PATH = "./redaction-flags.json";
 const HASH_LOG_PATH = "./ingestion-hashes.json";
 const SOURCE_ID_LOG_PATH = "./ingestion-source-ids.json";
 const MANUAL_REVIEW_PATH = "./manual-review.json";
@@ -136,6 +137,90 @@ async function ensureEntity(name: string, type: string): Promise<void> {
     });
   } catch {
     // Entity may already exist (INSERT OR IGNORE) — that's fine
+  }
+}
+
+// ── Redaction (enforced gate, mirrors knowledge-base/src/redact.ts) ─
+// Replicated locally rather than imported cross-repo (ingest script has
+// no package.json / shared deps with knowledge-base). Same patterns.
+const REDACTED = "[REDACTED]";
+const REDACT_PATTERNS: Array<{ re: RegExp; replacement: string }> = [
+  {
+    re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g,
+    replacement: REDACTED,
+  },
+  {
+    re: /((?:postgres|postgresql|mysql|mongodb|redis|amqp)s?:\/\/[^:@\s]+:)([^@\s]+)(@)/gi,
+    replacement: `$1${REDACTED}$3`,
+  },
+  { re: /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}/g, replacement: REDACTED },
+  {
+    re: /\b(sk|pk|rk|gsk|sk_live|sk_test|pk_live|pk_test)-[A-Za-z0-9_\-]{8,}/g,
+    replacement: REDACTED,
+  },
+  { re: /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, replacement: REDACTED },
+  { re: /_authToken\s*=\s*[A-Za-z0-9\-._]{10,}/gi, replacement: REDACTED },
+  {
+    re: /\b[A-Z][A-Z0-9_]{1,}(?:API_KEY|_KEY|_TOKEN|_SECRET|_PASSWORD|_PASS|_CREDENTIAL|_AUTH)\s*=\s*["']?[^\s"'\n]{4,}["']?/gi,
+    replacement: REDACTED,
+  },
+  {
+    re: /\b(?:token|secret|password|passwd|api[_-]?key)\s*[:=]\s*["']?[A-Za-z0-9+/=_\-]{16,}["']?/gi,
+    replacement: REDACTED,
+  },
+];
+
+function redact(input: string): string {
+  let out = input;
+  for (const { re, replacement } of REDACT_PATTERNS) {
+    re.lastIndex = 0;
+    out = out.replace(re, replacement);
+  }
+  return out;
+}
+
+// ── Redaction assist (flag-only, never replaces, regex above is the gate) ─
+async function appendRedactionFlag(entry: Record<string, unknown>): Promise<void> {
+  let flags: unknown[] = [];
+  try {
+    const file = Bun.file(REDACTION_FLAGS_PATH);
+    if (await file.exists()) flags = await file.json();
+  } catch {
+    flags = [];
+  }
+  flags.push(entry);
+  await Bun.write(REDACTION_FLAGS_PATH, JSON.stringify(flags, null, 2));
+}
+
+async function redactionAssist(sourceId: number, content: string): Promise<void> {
+  try {
+    const res = await fetch(`${OMLX_BASE}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OMLX_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: `Does this text contain anything that looks like a secret, API key, password, or credential that a regex might have missed? Answer with just "yes" or "no", and if yes, quote the suspicious substring on a second line.\n\n${content}`,
+          },
+        ],
+        max_tokens: 100,
+      }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const verdict = data?.choices?.[0]?.message?.content;
+    if (typeof verdict === "string" && /^\s*yes/i.test(verdict)) {
+      await appendRedactionFlag({
+        source_id: sourceId,
+        flagged_at: new Date().toISOString(),
+        model_output: verdict.trim(),
+      });
+      console.log(`  Redaction-assist flagged source #${sourceId} for manual review (logged, not blocked)`);
+    }
+  } catch {
+    // fail open — assist is advisory only, never blocks the primary path
   }
 }
 
@@ -281,7 +366,11 @@ async function ingest(): Promise<void> {
         console.log(`  Conflict detected on source #${obs.id} — logged to ${MANUAL_REVIEW_PATH}`);
       }
 
-      const summarized = await summarizeIfLong(content);
+      // Enforced redaction gate runs on raw content, before summarization —
+      // a paraphrase of an unredacted secret would otherwise survive into KB.
+      const redacted = redact(content);
+      await redactionAssist(obs.id, redacted);
+      const summarized = await summarizeIfLong(redacted);
       const written = await addObservation(entityName, summarized);
       if (written) {
         totalWritten++;

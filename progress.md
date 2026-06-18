@@ -223,5 +223,35 @@ Files changed
 - `docs/implementation-spec-phase5.md` — NEW: Phase 5 spec, decisions #15–17, acceptance criteria.
 
 ### What's next
-- Phase 5 follow-on (optional): wire log classification and/or secret-redaction-assist call sites.
+- Phase 5 follow-on (optional): wire log classification call site.
+- Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
+
+---
+
+## 2026-06-18 — Phase 5 follow-on: secret-redaction-assist wired, real gap fixed
+
+### Decision #18 logged (see `docs/implementation-spec-phase5.md`)
+While wiring redaction-assist, found `POST /observations` (the endpoint `ingest-claude-mem.ts` writes through) had **zero redaction** — the Phase 2 regex gate (`knowledge-base/src/redact.ts`) was only wired on `/capture`, not here. Fixed first, then added assist on top, per explicit decision before writing oMLX-assist code.
+
+### Verified results
+1. **✅ Enforced regex redaction gate now applied on the ingest write path.**
+   - `redact()` replicated locally in `ingest-claude-mem.ts` (same patterns as `knowledge-base/src/redact.ts`; no cross-repo import — that repo isn't a shared dependency of this script).
+   - Tested against synthetic secrets (`ANTHROPIC_API_KEY=sk-ant-...`, `Authorization: Bearer eyJ...`): both fully stripped to `[REDACTED]`, confirmed no raw secret substring survives.
+   - Wired **before** summarization — redact(raw) → redactionAssist(redacted) → summarizeIfLong(redacted) → addObservation(). Order is load-bearing: redacting after summarization would let a model paraphrase leak an unredacted secret through.
+   - Hash/conflict-detection (Decision #13) untouched — still hashes/stores raw `content` in `ingestion-source-ids.json` for diffing; only the KB-written copy passes through redact().
+
+2. **✅ `redactionAssist()` wired end-to-end, real oMLX request/response confirmed.**
+   - Flag-only: logs to `redaction-flags.json` (new), never replaces content, never blocks the write, fails open on any oMLX error.
+   - Live test against 3 synthetic prompts including `"my password is hunter2"` — oMLX 4B model answered "no" (no flag) on all three. Assist mechanically works (call, parse, conditional log) but has weak recall as prompted.
+   - **Known limitation, shipped as-is per explicit decision**: assist is advisory only; the regex pass above is the actual enforced gate and is verified working independently of the model's judgment.
+
+3. **✅ Live ingestion run, no regressions.**
+   - `bun ingest-claude-mem.ts`: Fetched 613, New 11, Written 11, Conflicts 0. No errors. `redaction-flags.json` correctly not created (no flaggable content in this real batch, no false positives either).
+
+### Files changed
+- `ingest-claude-mem.ts` — added local `redact()` (regex, mirrors `knowledge-base/src/redact.ts`), `redactionAssist()` (oMLX flag-only) and `appendRedactionFlag()`; wired into write path in redact → assist → summarize → write order.
+- `docs/implementation-spec-phase5.md` — Decision #18 logged.
+
+### What's next
+- Phase 5 follow-on (optional): log classification call site — last of the three from the original brief, still not built.
 - Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
