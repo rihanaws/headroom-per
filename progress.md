@@ -255,3 +255,11 @@ While wiring redaction-assist, found `POST /observations` (the endpoint `ingest-
 ### What's next
 - Phase 5 follow-on (optional): log classification call site — last of the three from the original brief, still not built.
 - Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
+
+## 2026-06-18 — Phase 5 redaction commit pushed to origin
+
+**✅ Verified `bfe7192` (redaction gap fix + redaction-assist) pushed to `origin/main`.**
+
+- Working tree was clean, 1 commit ahead of origin before push.
+- `git push origin main` → `6e24ba9..bfe7192  main -> main`, confirmed.
+- Repo now in sync with remote; no local-only commits remaining.
