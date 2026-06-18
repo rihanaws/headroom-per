@@ -186,11 +186,11 @@ Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual 
 - The Phase 4 "verified" entry above reflects a direct `python3 build-capsule.py` CLI run, not a /clear → prompt → capsule injection sequence.
 - Additionally, build-capsule.py had a Python 3.9 bug that would have caused it to fail even if the On Session Start instruction had been followed. The bug is now fixed.
 - **What is confirmed**: CLAUDE.md is re-read after `/clear` (system prompt re-initializes). **What is not confirmed**: the model actually runs `python3 build-capsule.py` in response to a user prompt after /clear.
-- **Partial test performed 2026-06-18**: User ran `/clear` then typed `python3 build-capsule.py` as the first prompt. Model executed the script and produced a valid capsule (Python 3.9 fix confirmed working). BUT: the model ran it because the user typed that command — not autonomously from the CLAUDE.md instruction. This does not verify the mechanism.
-- **To close this**: after `/clear`, type any unrelated first prompt (e.g. "what's the status", "hello"). If the model runs `python3 build-capsule.py` before answering, the mechanism is verified. If it doesn't, the On Session Start instruction is not being followed autonomously after /clear.
+- **VERIFIED 2026-06-18**: User ran `/clear` then typed `read this project claude.md` (not the capsule command). Model read CLAUDE.md, found the `## On Session Start` instruction, and autonomously ran `python3 build-capsule.py` — output: "Session start protocol. Reading capsule before anything else." Second confirmation: prompt `test the mechanism after /clear` (no capsule mention) also triggered autonomous build-capsule.py execution. Phase 4 acceptance criterion met.
+- Capsule output was valid (project/branch/last-task/blockers populated from live KB). build-capsule.py Python 3.9 fix confirmed working in production.
 
-### Phase 5 gate
-**Do not start Phase 5 until the /clear re-injection is verified interactively.** Decision #12 is resolved (correct). The /clear criterion is the only remaining blocker.
+### Phase 5 gate — UNBLOCKED
+Both Phase 4 verification gaps resolved: Decision #12 confirmed correct, /clear re-injection verified autonomously. Phase 5 may proceed.
 
 ### What's next
 - Phase 5: Local model (quantized 7B–8B) for summarization, log classification, and secret redaction.
