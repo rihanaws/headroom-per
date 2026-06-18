@@ -192,6 +192,36 @@ Added to `implementation-spec-phases-1-4.md` decision log: approval is a manual 
 ### Phase 5 gate — UNBLOCKED
 Both Phase 4 verification gaps resolved: Decision #12 confirmed correct, /clear re-injection verified autonomously. Phase 5 may proceed.
 
+---
+
+## 2026-06-18 — Phase 5: local model summarization wired (1 of 3 call sites)
+
+### Decisions made (see `docs/implementation-spec-phase5.md` for full log)
+- Decision #15: used already-running oMLX (`127.0.0.1:8005`, `Qwen3.5-4B-MLX-4bit`) instead of pulling a 7B–8B model per the brief's literal wording — machine RAM tight (4.3GB free at check time, oMLX reports 11GB ceiling), 4B already loaded and verified serving. User approved via AskUserQuestion.
+- Decision #16: oMLX accessed via its OpenAI-compatible `/v1/chat/completions` endpoint directly — no new client dependency.
+- Decision #17: local-model calls are a separate code path, not routed through Headroom (Headroom stays scoped to Claude/Codex provider traffic per Phase 1).
+
+### Verified results
+1. **✅ oMLX `/health` and `/v1/chat/completions` reachable, verified with a real request/response.**
+   - `/health` → `{"status":"healthy","default_model":"Qwen3.5-4B-MLX-4bit", ...}`
+   - `/v1/chat/completions` → real completion returned, OpenAI-compatible schema confirmed.
+
+2. **✅ Summarization call site wired end-to-end in `ingest-claude-mem.ts`.**
+   - Added `summarizeIfLong()`: only fires above `SUMMARIZE_THRESHOLD_CHARS = 1500`; fails open (returns original content) on any oMLX error/unreachability.
+   - Wired after conflict-hash computation, before `addObservation()` — raw `content` still used for hashing/conflict-detection (Decision #13/#14 untouched), only the KB-written copy is summarized.
+   - Live ingestion run: 13 new observations written, all under threshold — correctly passed through unsummarized (not a bug, just no long entries in this batch).
+   - Isolated test with a 2,225-char synthetic input: summarized to 277 chars, real model output, concrete facts preserved (Phase 5, decision #15, 4B model choice) — confirms the path fires correctly when triggered.
+
+3. **⏭️ Log classification and secret-redaction-assist call sites — NOT built this pass.**
+   - Spec only required at least one of three call sites; summarization chosen as lowest-risk (existing ingestion path, no change to the enforced regex redaction gate).
+   - Remaining two deferred, not forgotten — pick up in a follow-on Phase 5 session if needed.
+
+4. **✅ No change to Headroom routing scope or existing regex redaction gate (`redact.ts`).**
+
+Files changed
+- `ingest-claude-mem.ts` — added `OMLX_BASE`, `OMLX_MODEL`, `SUMMARIZE_THRESHOLD_CHARS` constants; added `summarizeIfLong()`; wired into the write path before `addObservation()`.
+- `docs/implementation-spec-phase5.md` — NEW: Phase 5 spec, decisions #15–17, acceptance criteria.
+
 ### What's next
-- Phase 5: Local model (quantized 7B–8B) for summarization, log classification, and secret redaction.
+- Phase 5 follow-on (optional): wire log classification and/or secret-redaction-assist call sites.
 - Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).

@@ -19,6 +19,9 @@ import { createHash } from "crypto";
 // ── Configuration ──────────────────────────────────────────────────
 const CLAUDE_MEM_BASE = "http://127.0.0.1:37701";
 const KB_API_BASE = "http://127.0.0.1:3333";
+const OMLX_BASE = "http://127.0.0.1:8005";
+const OMLX_MODEL = "Qwen3.5-4B-MLX-4bit";
+const SUMMARIZE_THRESHOLD_CHARS = 1500;
 const BATCH_SIZE = 50;
 const HASH_LOG_PATH = "./ingestion-hashes.json";
 const SOURCE_ID_LOG_PATH = "./ingestion-source-ids.json";
@@ -133,6 +136,32 @@ async function ensureEntity(name: string, type: string): Promise<void> {
     });
   } catch {
     // Entity may already exist (INSERT OR IGNORE) — that's fine
+  }
+}
+
+async function summarizeIfLong(content: string): Promise<string> {
+  if (content.length <= SUMMARIZE_THRESHOLD_CHARS) return content;
+  try {
+    const res = await fetch(`${OMLX_BASE}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OMLX_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: `Summarize the following dev log entry in 2-3 sentences, keeping concrete facts (file names, decisions, numbers):\n\n${content}`,
+          },
+        ],
+        max_tokens: 200,
+      }),
+    });
+    if (!res.ok) return content;
+    const data = await res.json();
+    const summary = data?.choices?.[0]?.message?.content;
+    return typeof summary === "string" && summary.trim() ? summary.trim() : content;
+  } catch {
+    return content;
   }
 }
 
@@ -252,7 +281,8 @@ async function ingest(): Promise<void> {
         console.log(`  Conflict detected on source #${obs.id} — logged to ${MANUAL_REVIEW_PATH}`);
       }
 
-      const written = await addObservation(entityName, content);
+      const summarized = await summarizeIfLong(content);
+      const written = await addObservation(entityName, summarized);
       if (written) {
         totalWritten++;
         processedHashes.add(hash);
