@@ -224,7 +224,7 @@ Files changed
 
 ### What's next
 - Phase 5 follow-on (optional): wire log classification call site.
-- Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
+ Phase 6: Curated fine-tuning dataset export (not until Phases 0–5 stable).
 
 ---
 
@@ -263,3 +263,22 @@ While wiring redaction-assist, found `POST /observations` (the endpoint `ingest-
 - Working tree was clean, 1 commit ahead of origin before push.
 - `git push origin main` → `6e24ba9..bfe7192  main -> main`, confirmed.
 - Repo now in sync with remote; no local-only commits remaining.
+
+## 2026-06-18 — Phase 5 closed: cross-check verification + log-classification deferral
+
+### Cross-checked all Phase 5 claims against actual file state (not narrative)
+- `redact()` in `ingest-claude-mem.ts`: confirmed present, 8 regex patterns, wired before `redactionAssist`/`summarizeIfLong`/`addObservation`. Order verified in source: redact → assist → summarize → write.
+- Hash/dedup (`hashObservation`) confirmed running on raw `obs.*` fields, before redaction — matches Decision #13 intent.
+- `redactionAssist()` confirmed fail-open (empty catch, no rethrow), flag-only (never mutates `content`).
+- **Gap found**: no `REDACT_ASSIST_ENABLED` toggle exists in the file, despite being mentioned as a planned addition. Not load-bearing — assist already fails open and never blocks — but flagged for accuracy.
+- Reran synthetic redaction test (not committed as a test file, ad hoc via `/tmp`): 4/5 synthetic secrets (`sk-ant-...`, `Bearer ...`, DB password in connection string, `ghp_...`) fully stripped to `[REDACTED]`. 5th (`"my password is X"`, no `:`/`=`) not matched — confirmed known limitation, not a regression.
+- Reran live ingestion (`bun ingest-claude-mem.ts`): Fetched 621, New 8, Written 8, Conflicts 0, no errors. Numbers differ from the original 613/11/11/0 run because more Claude Mem observations accrued since — not a discrepancy.
+
+### Decision: log classification call site (3rd of 3 from original brief) — deferred, not built
+Asked whether to wire it. Determined the spec's "classify a log line" has no real consumer defined — no log pipeline exists to feed it, and inventing one (e.g. reusing Claude Mem's `obs.type` field, or classifying the ingestion job's own console output) would be scope invention beyond what Phase 5 asked for. Phase 5 acceptance criteria require "at least one of three call sites" — summarization + redaction-assist already satisfy this twice over.
+
+**Phase 5 is closed as complete.** Log classification stays deferred until a concrete log source + consumer exists.
+
+### What's next
+- Phase 6: Curated fine-tuning dataset export — not started, blocked until explicitly resumed.
+- Optional cleanup: add `REDACT_ASSIST_ENABLED` toggle for parity with original plan (cosmetic, not functional).
